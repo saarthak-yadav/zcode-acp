@@ -33,6 +33,7 @@ import { readCredentialStoreSync } from "../backend/credential-store.js";
 import type { ZcodeBackend } from "../backend/client.js";
 import { BUILTIN_PROVIDER_ENV, builtinProviderEnv } from "../backend/resolve.js";
 import { log, warn, ZCODE_CREDS_PATH } from "../utils.js";
+import { readCredentialConfig } from "./bridge-accounts.js";
 
 /** The bundled provider-table file the CLI boots from. */
 const PROVIDER_CONFIG_NAME = "zcode-builtin.json";
@@ -66,7 +67,7 @@ interface BuiltinTable {
  * (verified 2026-09 — the push reported "received" but entitlement never
  * applied, switch stayed "Provider Registry 中不存在 Model").
  */
-function builtinTablePath(): string | null {
+export function builtinTablePath(): string | null {
   const injected = builtinProviderEnv()[BUILTIN_PROVIDER_ENV];
   if (injected) return injected;
   const fromEnv = process.env[BUILTIN_PROVIDER_ENV]?.trim();
@@ -232,7 +233,7 @@ function entitledBuiltinProviders(): Set<string> {
   }
   // 2) Legacy config.json (still the app's own provider enablement).
   try {
-    const cfg = JSON.parse(readFileSync(ZCODE_CREDS_PATH, "utf8")) as {
+    const cfg = readCredentialConfig(ZCODE_CREDS_PATH) as {
       provider?: Record<string, { enabled?: boolean; options?: { apiKey?: string } }>;
     };
     let builtinEntries = 0;
@@ -313,7 +314,7 @@ export function codingPlanRequestAuthFor(
   // config.json first (the pre-3.12 builtin: provider's own spelling); a fresh
   // desktop-only layout has none — fall through to the stored plan key.
   try {
-    const cfg = JSON.parse(readFileSync(ZCODE_CREDS_PATH, "utf8")) as {
+    const cfg = readCredentialConfig(ZCODE_CREDS_PATH) as {
       provider?: Record<string, { enabled?: boolean; options?: { apiKey?: string } }>;
     };
     const apiKey = cfg.provider?.[legacyId]?.options?.apiKey?.trim();
