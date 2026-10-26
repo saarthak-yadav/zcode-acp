@@ -60,6 +60,7 @@ import {
   codingPlanRequestAuthFor,
   configProviderIdFor,
 } from "../src/config/account-provider.js";
+import { saveBridgeAccount } from "../src/config/bridge-accounts.js";
 
 /** Minimal bundled table with two coding-plan providers (one zai, one bigmodel). */
 const TABLE = {
@@ -120,6 +121,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE;
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("provider id mapping", () => {
@@ -369,6 +371,40 @@ describe("fresh desktop-only layout — encrypted store entitlement (#320)", () 
     expect(codingPlanRequestAuthFor("account:bigmodel-individual-coding-plan")).toEqual({
       apiKey: "legacy-key",
     });
+  });
+
+  it("keeps one family's store fallback when a bridge account names the other family", async () => {
+    vi.stubEnv("ZCODE_HOME", path.join(root, ".zcode"));
+    writeCredentialStore({ [INDIVIDUAL_KEY]: "stored-individual-key" });
+    await saveBridgeAccount("zai", "bridge-zai-key");
+    const { providers } = buildAccountProviderConfig()!;
+    expect(providers["account:bigmodel-individual-coding-plan"]!.access.entitled).toBe(true);
+    expect(providers["account:zai-individual-coding-plan"]!.access.entitled).toBe(true);
+    expect(codingPlanRequestAuthFor("account:bigmodel-individual-coding-plan")).toEqual({
+      apiKey: "stored-individual-key",
+    });
+    expect(codingPlanRequestAuthFor("account:zai-individual-coding-plan")).toEqual({
+      apiKey: "bridge-zai-key",
+    });
+  });
+
+  it("lets a bridge account override an unavailable desktop verdict for its own plan only", async () => {
+    vi.stubEnv("ZCODE_HOME", path.join(root, ".zcode"));
+    writeFileSync(
+      path.join(root, ".zcode", "v2", "coding-plan-cache.json"),
+      JSON.stringify({
+        entryStatus: {
+          items: {
+            "builtin:zai-coding-plan": { status: "unavailable" },
+            "builtin:bigmodel-coding-plan": { status: "unavailable" },
+          },
+        },
+      }),
+    );
+    await saveBridgeAccount("zai", "bridge-zai-key");
+    const { providers } = buildAccountProviderConfig()!;
+    expect(providers["account:zai-individual-coding-plan"]!.access.entitled).toBe(true);
+    expect(providers["account:bigmodel-individual-coding-plan"]!.access.entitled).toBe(false);
   });
 
   it("never serves a team plan key from the store", () => {

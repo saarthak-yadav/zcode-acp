@@ -33,7 +33,7 @@ import { readCredentialStoreSync } from "../backend/credential-store.js";
 import type { ZcodeBackend } from "../backend/client.js";
 import { BUILTIN_PROVIDER_ENV, builtinProviderEnv } from "../backend/resolve.js";
 import { log, warn, ZCODE_CREDS_PATH } from "../utils.js";
-import { readCredentialConfig } from "./bridge-accounts.js";
+import { overlayAccounts, readCredentialConfig } from "./bridge-accounts.js";
 
 /** The bundled provider-table file the CLI boots from. */
 const PROVIDER_CONFIG_NAME = "zcode-builtin.json";
@@ -209,12 +209,25 @@ function storeIndividualCodingPlanKey(accountProviderId: string): string | null 
  *   4. `setting.json` — last resort: the Settings UI's remembered pick per
  *      family. A SELECTION record, not an entitlement.
  *
+ * Bridge accounts (`acp-accounts.json`, written by `zcode-acp setup`) sit
+ * above the whole ladder: an explicit user key entitles its family's
+ * individual coding plan even over an `unavailable` verdict, because
+ * deliberate user input beats a possibly stale cache. They never count as a
+ * verdict, so an account for one family leaves source 3 open for the other.
+ *
  * Verified 2026-09 against the desktop's own pushed account snapshot: sources
  * 1+2 produced exactly its entitlement set (bigmodel individual true, every
  * zai/start/team plan false); source 3 restores the same outcome on fresh
  * desktop-only layouts (verified 2026-10 against a real store).
  */
 function entitledBuiltinProviders(): Set<string> {
+  const out = desktopEntitledBuiltinProviders();
+  for (const family of Object.keys(overlayAccounts())) out.add(`builtin:${family}-coding-plan`);
+  return out;
+}
+
+/** Sources 1-4 above, read from the raw desktop files only. */
+function desktopEntitledBuiltinProviders(): Set<string> {
   const out = new Set<string>();
   const credsDir = path.dirname(ZCODE_CREDS_PATH);
   let sawVerdict = false;
@@ -233,7 +246,7 @@ function entitledBuiltinProviders(): Set<string> {
   }
   // 2) Legacy config.json (still the app's own provider enablement).
   try {
-    const cfg = readCredentialConfig(ZCODE_CREDS_PATH) as {
+    const cfg = JSON.parse(readFileSync(ZCODE_CREDS_PATH, "utf8")) as {
       provider?: Record<string, { enabled?: boolean; options?: { apiKey?: string } }>;
     };
     let builtinEntries = 0;
@@ -311,8 +324,9 @@ export function codingPlanRequestAuthFor(
   const legacyId = configProviderIdFor(accountProviderId);
   if (legacyId === accountProviderId) return null;
   if (!entitledBuiltinProviders().has(legacyId)) return null;
-  // config.json first (the pre-3.12 builtin: provider's own spelling); a fresh
-  // desktop-only layout has none — fall through to the stored plan key.
+  // A bridge account's key, then config.json (the pre-3.12 builtin: provider's
+  // own spelling), merged by readCredentialConfig. A fresh desktop-only layout
+  // has neither, so the stored plan key answers.
   try {
     const cfg = readCredentialConfig(ZCODE_CREDS_PATH) as {
       provider?: Record<string, { enabled?: boolean; options?: { apiKey?: string } }>;
