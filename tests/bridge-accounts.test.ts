@@ -27,7 +27,7 @@ import {
   readCredentialConfig,
   saveBridgeAccount,
 } from "../src/config/bridge-accounts.js";
-import { loadAllModels } from "../src/config/options.js";
+import { loadAllModels, modelContextWindow } from "../src/config/options.js";
 import { fetchQuotaResponse } from "../src/quota/client.js";
 import { ZCODE_CREDS_PATH } from "../src/utils.js";
 
@@ -188,6 +188,38 @@ describe("standalone plan integration", () => {
       JSON.parse(readFileSync(ZCODE_CREDS_PATH, "utf8")).provider["builtin:zai-coding-plan"]
         .enabled,
     ).toBe(false);
+  });
+  it("keeps the Desktop per-model data of the family it overlays", async () => {
+    const model = {
+      limit: { context: 123456 },
+      reasoning: { enabled: true, variants: ["low", "high"], defaultVariant: "high" },
+    };
+    writeFileSync(
+      ZCODE_CREDS_PATH,
+      JSON.stringify({
+        provider: {
+          "builtin:bigmodel-coding-plan": {
+            name: "Desktop BigModel",
+            kind: "anthropic",
+            enabled: false,
+            options: { apiKey: "desktop-key", baseURL: "https://stale.example/api" },
+            models: { "SYNTHETIC-MODEL": model },
+          },
+        },
+      }),
+    );
+    expect(modelContextWindow("builtin:bigmodel-coding-plan", "SYNTHETIC-MODEL")).toBe(123456);
+    await saveBridgeAccount("bigmodel", KEY);
+    expect(
+      readCredentialConfig(ZCODE_CREDS_PATH).provider?.["builtin:bigmodel-coding-plan"],
+    ).toEqual({
+      name: "Desktop BigModel",
+      kind: "anthropic",
+      enabled: true,
+      options: { apiKey: KEY, baseURL: "https://open.bigmodel.cn/api/anthropic" },
+      models: { "SYNTHETIC-MODEL": model },
+    });
+    expect(modelContextWindow("builtin:bigmodel-coding-plan", "SYNTHETIC-MODEL")).toBe(123456);
   });
 });
 

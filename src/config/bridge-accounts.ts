@@ -194,12 +194,19 @@ export function readCredentialConfig(legacyFile: string): CredentialConfig {
       warnOnce(`bridge-accounts: skipping the ${family} account. ${(error as Error).message}`);
       continue;
     }
-    provider[`builtin:${family}-coding-plan`] = {
-      name: catalog.name,
+    const id = `builtin:${family}-coding-plan`;
+    const desktop = provider[id];
+    // The bridge owns the key, endpoint, and enablement. Desktop per-model data
+    // (context window, reasoning variants) stays.
+    provider[id] = {
+      ...desktop,
+      name: desktop?.name ?? catalog.name,
       kind: "anthropic",
       enabled: true,
-      options: { apiKey: account.apiKey, baseURL: catalog.baseURL },
-      models: Object.fromEntries(catalog.models.map((model) => [model, {}])),
+      options: { ...desktop?.options, apiKey: account.apiKey, baseURL: catalog.baseURL },
+      models: Object.fromEntries(
+        catalog.models.map((model) => [model, desktop?.models?.[model] ?? {}]),
+      ),
     };
   }
   return { ...config, provider };
