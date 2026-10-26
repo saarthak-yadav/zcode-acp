@@ -188,6 +188,68 @@ describe("standalone plan integration", () => {
   });
 });
 
+const DESKTOP_KEY = "synthetic-desktop-key";
+function writeDesktopConfig(): void {
+  writeFileSync(
+    ZCODE_CREDS_PATH,
+    JSON.stringify({
+      provider: {
+        "builtin:bigmodel-coding-plan": {
+          name: "Desktop BigModel",
+          kind: "anthropic",
+          enabled: true,
+          options: { apiKey: DESKTOP_KEY, baseURL: "https://open.bigmodel.cn/api/anthropic" },
+          models: { "SYNTHETIC-MODEL": {} },
+        },
+      },
+    }),
+  );
+}
+
+describe("overlay failures keep Desktop credentials", () => {
+  const damaged: Record<string, (file: string) => void> = {
+    "zero-byte": (file) => writeFileSync(file, "", { mode: 0o600 }),
+    "group-readable": (file) => {
+      writeFileSync(file, JSON.stringify({ version: 1, accounts: { zai: { apiKey: KEY } } }));
+      chmodSync(file, 0o644);
+    },
+    "wrong-version": (file) =>
+      writeFileSync(file, JSON.stringify({ version: 2, accounts: {} }), { mode: 0o600 }),
+    "unknown-family": (file) =>
+      writeFileSync(file, JSON.stringify({ version: 1, accounts: { other: { apiKey: KEY } } }), {
+        mode: 0o600,
+      }),
+    symlink: (file) => symlinkSync(file + ".missing-target", file),
+  };
+  it.each(Object.keys(damaged))("ignores a %s account file", (state) => {
+    if (state === "group-readable" && process.platform === "win32") return;
+    writeDesktopConfig();
+    damaged[state]!(bridgeAccountsPath());
+    expect(Object.keys(readCredentialConfig(ZCODE_CREDS_PATH).provider ?? {})).toEqual([
+      "builtin:bigmodel-coding-plan",
+    ]);
+    expect(loadZcodeCredentials().ANTHROPIC_API_KEY).toBe(DESKTOP_KEY);
+    expect(codingPlanRequestAuthFor("account:bigmodel-individual-coding-plan")).toEqual({
+      apiKey: DESKTOP_KEY,
+    });
+  });
+  it("skips only the family the installed catalog lacks", async () => {
+    writeDesktopConfig();
+    await saveBridgeAccount("zai", KEY);
+    await saveBridgeAccount("bigmodel", "bridge-bigmodel-key");
+    const table = path.join(root, "resources/config/provider/zcode-builtin.json");
+    const parsed = JSON.parse(readFileSync(table, "utf8"));
+    parsed.config.providerConfigRules.providerRules =
+      parsed.config.providerConfigRules.providerRules.filter(
+        (rule: { providerId: string }) => !rule.providerId.startsWith("account:zai-"),
+      );
+    writeFileSync(table, JSON.stringify(parsed));
+    const providers = readCredentialConfig(ZCODE_CREDS_PATH).provider ?? {};
+    expect(Object.keys(providers)).toEqual(["builtin:bigmodel-coding-plan"]);
+    expect(providers["builtin:bigmodel-coding-plan"]?.options?.apiKey).toBe("bridge-bigmodel-key");
+  });
+});
+
 function terminal() {
   const stream = new PassThrough();
   const state = { raw: false, output: "" };

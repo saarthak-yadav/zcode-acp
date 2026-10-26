@@ -4,7 +4,7 @@ import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync } fr
 import { mkdir, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { zcodeHomeDir } from "../utils.js";
+import { warn, zcodeHomeDir } from "../utils.js";
 import { builtinTablePath } from "./account-provider.js";
 
 export type CodingPlanFamily = "zai" | "bigmodel";
@@ -151,12 +151,32 @@ export function codingPlanCatalog(family: CodingPlanFamily): {
       /* Unsupported public catalog: report a safe setup error below. */
     }
   }
-  throw new Error("Install a supported ZCode CLI and configure ZCODE_BIN before account setup");
+  throw new Error(
+    `The installed ZCode provider table has no ${family} Coding Plan. Install a supported ZCode CLI or set ZCODE_BIN.`,
+  );
+}
+
+const warned = new Set<string>();
+/** Once per message: credential readers run before every model request. */
+function warnOnce(message: string): void {
+  if (warned.has(message)) return;
+  warned.add(message);
+  warn(message);
+}
+
+/** Saved accounts, or none when the file cannot be trusted. Never takes Desktop credentials down. */
+export function overlayAccounts(): Accounts {
+  try {
+    return readBridgeAccounts();
+  } catch (error) {
+    warnOnce(`bridge-accounts: ignoring saved accounts. ${(error as Error).message}`);
+    return {};
+  }
 }
 
 /** Desktop entries retain their order; explicit bridge keys override only their plan. */
 export function readCredentialConfig(legacyFile: string): CredentialConfig {
-  const accounts = readBridgeAccounts();
+  const accounts = overlayAccounts();
   let config: CredentialConfig;
   try {
     config = JSON.parse(readFileSync(legacyFile, "utf8"));
@@ -169,7 +189,13 @@ export function readCredentialConfig(legacyFile: string): CredentialConfig {
   }
   const provider = { ...config.provider };
   for (const [family, account] of Object.entries(accounts)) {
-    const catalog = codingPlanCatalog(family as CodingPlanFamily);
+    let catalog: ReturnType<typeof codingPlanCatalog>;
+    try {
+      catalog = codingPlanCatalog(family as CodingPlanFamily);
+    } catch (error) {
+      warnOnce(`bridge-accounts: skipping the ${family} account. ${(error as Error).message}`);
+      continue;
+    }
     provider[`builtin:${family}-coding-plan`] = {
       name: catalog.name,
       kind: "anthropic",
