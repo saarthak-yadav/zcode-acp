@@ -269,13 +269,14 @@ version `1` and the other account entries.
 This is manual terminal setup, not an interactive ACP authentication method.
 T3 Code and other clients can continue using the agent-handled authentication
 already advertised by the bridge. No OAuth/captcha flow or alternative remote
-login mechanism is added. Fresh homes also require the provider-bootstrap fix
-in [PR #314](https://github.com/william0wang/zcode-acp/pull/314), which injects
-both builtin and personal-provider paths before the personal file exists.
+login mechanism is added.
+
 If setup is killed while saving, it may leave an `acp-accounts.json.lock`
 directory. After confirming no setup process is running, remove that empty
-lock directory and retry. Malformed, linked, or broadly readable account files
-are refused; setup never overwrites their contents to recover automatically.
+lock directory and retry. Setup refuses a malformed, linked, or broadly
+readable account file and never overwrites it. The bridge ignores such a
+file with a warning and keeps using Desktop credentials. Fix or remove the
+file, then run setup again.
 
 ## ACP Registry
 
@@ -376,12 +377,12 @@ ZCode backend over **local pipes**; that data reaches the GLM cloud API only
 because the ZCode backend itself sends it there for inference — this server
 adds no extra destinations.
 
-| Concern     | What & why                                                                                                                                                                                                                         |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Network     | Only one outbound request in the whole codebase: the quota GET (`open.bigmodel.cn` / `api.z.ai`), carrying just your API key — needed to fetch your usage numbers, sends no user content                                           |
-| Credentials | Desktop credentials or owner-only `~/.zcode/v2/acp-accounts.json` authenticate native requests and quota queries. Manual setup writes only the private bridge file; Desktop settings are preserved. OAuth remains handled by ZCode |
-| Disk        | No new files created. Writes only to the existing `~/.zcode/v2/tasks-index.sqlite` — this **syncs sessions to the ZCode app** so they appear in its history list and full-text search (stores the session title and first prompt)  |
-| Logging     | Diagnostics to stderr for troubleshooting bridge issues. Even with `ZCODE_ACP_DEBUG=1`, no prompts/code/keys are ever logged                                                                                                       |
+| Concern     | What & why                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Network     | Only one outbound request in the whole codebase: the quota GET (`open.bigmodel.cn` / `api.z.ai`), carrying just your API key — needed to fetch your usage numbers, sends no user content                                                                                                                                                                                                                                                           |
+| Credentials | Desktop credentials or owner-only `~/.zcode/v2/acp-accounts.json` authenticate native requests and quota queries. Manual setup writes only the private bridge file; Desktop settings are preserved. Never logged. OAuth remains handled by ZCode                                                                                                                                                                                                   |
+| Disk        | No new files unless you run `zcode-acp setup`. Setup writes the owner-only (0600) `~/.zcode/v2/acp-accounts.json` by atomic replacement, with a transient `acp-accounts.json.lock` directory and `.tmp` file while it saves. Otherwise writes only to the existing `~/.zcode/v2/tasks-index.sqlite` — this **syncs sessions to the ZCode app** so they appear in its history list and full-text search (stores the session title and first prompt) |
+| Logging     | Diagnostics to stderr for troubleshooting bridge issues. Even with `ZCODE_ACP_DEBUG=1`, no prompts/code/keys are ever logged                                                                                                                                                                                                                                                                                                                       |
 
 ## License
 
