@@ -163,7 +163,7 @@ function warnOnce(message: string): void {
 }
 
 /** Saved accounts, or none when the file cannot be trusted. Never takes Desktop credentials down. */
-export function overlayAccounts(): Accounts {
+function overlayAccounts(): Accounts {
   try {
     return readBridgeAccounts();
   } catch (error) {
@@ -172,28 +172,43 @@ export function overlayAccounts(): Accounts {
   }
 }
 
+type Overlay = { apiKey: string; catalog: ReturnType<typeof codingPlanCatalog> };
+
+/**
+ * The saved accounts whose family the installed catalog supports. The overlay
+ * and the entitlement rung both read this, so a skipped family is neither
+ * overlaid nor entitled.
+ */
+export function bridgeOverlays(): Partial<Record<CodingPlanFamily, Overlay>> {
+  const out: Partial<Record<CodingPlanFamily, Overlay>> = {};
+  for (const [family, account] of Object.entries(overlayAccounts())) {
+    try {
+      out[family as CodingPlanFamily] = {
+        apiKey: account.apiKey,
+        catalog: codingPlanCatalog(family as CodingPlanFamily),
+      };
+    } catch (error) {
+      warnOnce(`bridge-accounts: skipping the ${family} account. ${(error as Error).message}`);
+    }
+  }
+  return out;
+}
+
 /** Desktop entries retain their order; explicit bridge keys override only their plan. */
 export function readCredentialConfig(legacyFile: string): CredentialConfig {
-  const accounts = overlayAccounts();
+  const overlays = bridgeOverlays();
   let config: CredentialConfig;
   try {
     config = JSON.parse(readFileSync(legacyFile, "utf8"));
   } catch (error) {
-    if (!Object.keys(accounts).length)
+    if (!Object.keys(overlays).length)
       throw new Error("Cannot read Desktop credential configuration");
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
       throw new Error("Cannot read Desktop credential configuration");
     config = {};
   }
   const provider = { ...config.provider };
-  for (const [family, account] of Object.entries(accounts)) {
-    let catalog: ReturnType<typeof codingPlanCatalog>;
-    try {
-      catalog = codingPlanCatalog(family as CodingPlanFamily);
-    } catch (error) {
-      warnOnce(`bridge-accounts: skipping the ${family} account. ${(error as Error).message}`);
-      continue;
-    }
+  for (const [family, { apiKey, catalog }] of Object.entries(overlays)) {
     const id = `builtin:${family}-coding-plan`;
     const desktop = provider[id];
     // The bridge owns the key, endpoint, and enablement. Desktop per-model data
@@ -203,7 +218,7 @@ export function readCredentialConfig(legacyFile: string): CredentialConfig {
       name: desktop?.name ?? catalog.name,
       kind: "anthropic",
       enabled: true,
-      options: { ...desktop?.options, apiKey: account.apiKey, baseURL: catalog.baseURL },
+      options: { ...desktop?.options, apiKey, baseURL: catalog.baseURL },
       models: Object.fromEntries(
         catalog.models.map((model) => [model, desktop?.models?.[model] ?? {}]),
       ),

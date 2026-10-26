@@ -218,7 +218,9 @@ ZCode protocol types into ACP notifications directly — always translate.
   entitlement — only as a last resort when both are empty. A bridge account
   (`acp-accounts.json`, `zcode-acp setup`) entitles its own family's
   individual coding plan on top of that ladder, even over an `unavailable`
-  verdict, and never counts as a verdict. The #320 store fallback must still
+  verdict, and never counts as a verdict. It entitles only when the overlay
+  applied (`bridgeOverlays`), so a family the installed catalog lacks gains
+  nothing. The #320 store fallback must still
   see only the raw desktop files (`desktopEntitledBuiltinProviders`). (2) `session/setModel`
   is now strict: `{sessionId, model:{providerId, modelId, options?}, persistAsWorkspaceLastUsed}`,
   NO `runtimeModel` (`Unrecognized key`), and the OBJECT form requires

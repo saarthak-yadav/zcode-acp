@@ -33,7 +33,7 @@ import { readCredentialStoreSync } from "../backend/credential-store.js";
 import type { ZcodeBackend } from "../backend/client.js";
 import { BUILTIN_PROVIDER_ENV, builtinProviderEnv } from "../backend/resolve.js";
 import { log, warn, ZCODE_CREDS_PATH } from "../utils.js";
-import { overlayAccounts, readCredentialConfig } from "./bridge-accounts.js";
+import { bridgeOverlays, readCredentialConfig } from "./bridge-accounts.js";
 
 /** The bundled provider-table file the CLI boots from. */
 const PROVIDER_CONFIG_NAME = "zcode-builtin.json";
@@ -226,7 +226,9 @@ function storeIndividualCodingPlanKey(accountProviderId: string): string | null 
  * Bridge accounts (`acp-accounts.json`, written by `zcode-acp setup`) sit
  * above the whole ladder: an explicit user key entitles its family's
  * individual coding plan even over an `unavailable` verdict, because
- * deliberate user input beats a possibly stale cache. They never count as a
+ * deliberate user input beats a possibly stale cache. Only families the
+ * credential overlay applied count (see bridgeOverlays), so a family whose
+ * installed catalog is unusable gains nothing. They never count as a
  * verdict, so an account for one family leaves source 3 open for the other.
  *
  * Verified 2026-09 against the desktop's own pushed account snapshot: sources
@@ -236,7 +238,7 @@ function storeIndividualCodingPlanKey(accountProviderId: string): string | null 
  */
 function entitledBuiltinProviders(): Set<string> {
   const out = desktopEntitledBuiltinProviders();
-  for (const family of Object.keys(overlayAccounts())) out.add(`builtin:${family}-coding-plan`);
+  for (const family of Object.keys(bridgeOverlays())) out.add(`builtin:${family}-coding-plan`);
   return out;
 }
 

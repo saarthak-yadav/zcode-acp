@@ -288,6 +288,31 @@ describe("overlay failures keep Desktop credentials", () => {
     expect(Object.keys(providers)).toEqual(["builtin:bigmodel-coding-plan"]);
     expect(providers["builtin:bigmodel-coding-plan"]?.options?.apiKey).toBe("bridge-bigmodel-key");
   });
+  it("does not entitle a family whose overlay was skipped", async () => {
+    const table = path.join(root, "resources/config/provider/zcode-builtin.json");
+    const parsed = JSON.parse(readFileSync(table, "utf8"));
+    parsed.config.providerConfigRules.providerRules[0].config.builtinModelIds = [];
+    writeFileSync(table, JSON.stringify(parsed));
+    writeFileSync(
+      path.join(root, "coding-plan-cache.json"),
+      JSON.stringify({
+        entryStatus: { items: { "builtin:zai-coding-plan": { status: "unavailable" } } },
+      }),
+    );
+    writeFileSync(
+      ZCODE_CREDS_PATH,
+      JSON.stringify({
+        provider: {
+          "builtin:zai-coding-plan": { enabled: false, options: { apiKey: "stale-desktop-key" } },
+        },
+      }),
+    );
+    await saveBridgeAccount("zai", KEY);
+    expect(codingPlanRequestAuthFor("account:zai-individual-coding-plan")).toBeNull();
+    expect(
+      buildAccountProviderConfig()?.providers["account:zai-individual-coding-plan"].access.entitled,
+    ).toBe(false);
+  });
 });
 
 function terminal() {
