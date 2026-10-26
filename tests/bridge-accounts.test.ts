@@ -1,3 +1,4 @@
+import { execFileSync, spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -278,6 +279,25 @@ describe("overlay failures keep Desktop credentials", () => {
     expect(codingPlanRequestAuthFor("account:bigmodel-individual-coding-plan")).toEqual({
       apiKey: DESKTOP_KEY,
     });
+  });
+  it("rejects a FIFO account file without blocking", () => {
+    if (process.platform === "win32") return;
+    writeDesktopConfig();
+    const file = bridgeAccountsPath();
+    execFileSync("mkfifo", [file]);
+    // A blocking open would wait forever for a writer. The helper opens the
+    // write end after 3 s so a regression fails on time instead of hanging.
+    const writer = spawn("sh", ["-c", 'sleep 3; : > "$0"', file], { stdio: "ignore" });
+    try {
+      const started = Date.now();
+      expect(() => readBridgeAccounts()).toThrow(
+        "Invalid or insecure bridge account configuration",
+      );
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(loadZcodeCredentials().ANTHROPIC_API_KEY).toBe(DESKTOP_KEY);
+    } finally {
+      writer.kill();
+    }
   });
   it("skips only the family the installed catalog lacks", async () => {
     writeDesktopConfig();

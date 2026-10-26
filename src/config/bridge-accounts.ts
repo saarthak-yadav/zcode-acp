@@ -39,7 +39,12 @@ export function readBridgeAccounts(file = bridgeAccountsPath()): Accounts {
   try {
     // lstat also rejects dangling links on platforms without O_NOFOLLOW.
     if (lstatSync(file).isSymbolicLink()) throw new Error("Linked bridge account configuration");
-    fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    // Without O_NONBLOCK, opening a FIFO waits for a writer. With it, the
+    // isFile() check below rejects the FIFO.
+    fd = openSync(
+      file,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw new Error(`Cannot read bridge account configuration. ${fixOrRemove(file)}`);
