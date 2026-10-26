@@ -30,6 +30,10 @@ function validKey(value: unknown): value is string {
   );
 }
 
+function fixOrRemove(file: string): string {
+  return `Fix or remove ${file}, then run zcode-acp setup again.`;
+}
+
 export function readBridgeAccounts(file = bridgeAccountsPath()): Accounts {
   let fd: number;
   try {
@@ -38,7 +42,7 @@ export function readBridgeAccounts(file = bridgeAccountsPath()): Accounts {
     fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw new Error("Cannot read bridge account configuration");
+    throw new Error(`Cannot read bridge account configuration. ${fixOrRemove(file)}`);
   }
   try {
     const info = fstatSync(fd);
@@ -74,7 +78,7 @@ export function readBridgeAccounts(file = bridgeAccountsPath()): Accounts {
     }
     return out;
   } catch {
-    throw new Error("Invalid or insecure bridge account configuration");
+    throw new Error(`Invalid or insecure bridge account configuration. ${fixOrRemove(file)}`);
   } finally {
     closeSync(fd);
   }
@@ -98,19 +102,23 @@ export async function saveBridgeAccount(
   try {
     await mkdir(lock, { mode: 0o700 });
   } catch {
-    throw new Error("Account setup is already running or its lock is unavailable");
+    throw new Error(
+      `Account setup is already running or its lock is unavailable. If no setup is running, remove ${lock} and retry.`,
+    );
   }
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
     const accounts = readBridgeAccounts(file);
     accounts[family] = { apiKey };
-    await writeFile(temporary, JSON.stringify({ version: 1, accounts }) + "\n", {
-      flag: "wx",
-      mode: 0o600,
-    });
-    await rename(temporary, file);
-  } catch {
-    throw new Error("Cannot save bridge account configuration; existing accounts were preserved");
+    try {
+      await writeFile(temporary, JSON.stringify({ version: 1, accounts }) + "\n", {
+        flag: "wx",
+        mode: 0o600,
+      });
+      await rename(temporary, file);
+    } catch {
+      throw new Error("Cannot save bridge account configuration; existing accounts were preserved");
+    }
   } finally {
     await unlink(temporary).catch(() => undefined);
     await rmdir(lock).catch(() => undefined);

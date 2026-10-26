@@ -24,7 +24,7 @@ it("refuses dangling links even when O_NOFOLLOW is unavailable", async () => {
   symlinkSync(target, file);
   expect(() => readBridgeAccounts()).toThrow("Cannot read bridge account configuration");
   await expect(saveBridgeAccount("zai", "synthetic-link-test-key")).rejects.toThrow(
-    "existing accounts were preserved",
+    `Fix or remove ${file}`,
   );
   expect(readlinkSync(file)).toBe(target);
 });

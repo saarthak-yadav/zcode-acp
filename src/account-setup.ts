@@ -3,7 +3,11 @@ import { emitKeypressEvents } from "node:readline";
 import type { Key } from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
 
-import { codingPlanCatalog, saveBridgeAccount } from "./config/bridge-accounts.js";
+import {
+  codingPlanCatalog,
+  readBridgeAccounts,
+  saveBridgeAccount,
+} from "./config/bridge-accounts.js";
 import type { CodingPlanFamily } from "./config/bridge-accounts.js";
 
 /** Read a bounded ASCII key without echo, restoring terminal state on every exit. */
@@ -68,12 +72,15 @@ export async function runAccountSetup(
   input = process.stdin,
   output = process.stderr,
 ): Promise<void> {
-  if (args.length !== 2 || args[0] !== "--provider" || !["zai", "bigmodel"].includes(args[1]))
+  const parts = args.length === 1 ? args[0]!.split("=") : args;
+  if (parts.length !== 2 || parts[0] !== "--provider" || !["zai", "bigmodel"].includes(parts[1]!))
     throw new Error("Usage: zcode-acp setup --provider zai|bigmodel");
-  const family = args[1] as CodingPlanFamily;
+  const family = parts[1] as CodingPlanFamily;
   if (!input.isTTY || !output.isTTY)
     throw new Error("Run account setup in an interactive terminal");
-  codingPlanCatalog(family); // Validate installed public catalog before asking for a secret.
+  // Refuse before asking for a secret that could not be used or saved.
+  codingPlanCatalog(family);
+  readBridgeAccounts();
   output.write(
     "Use your individual Coding Plan API key. This saves a private bridge account; Desktop settings are preserved.\n",
   );

@@ -89,7 +89,10 @@ describe("private account storage", () => {
     const malformed = `{"secret":"${KEY}",broken`;
     writeFileSync(bridgeAccountsPath(), malformed, { mode: 0o600 });
     expect(() => readBridgeAccounts()).toThrow("Invalid or insecure bridge account configuration");
-    await expect(saveBridgeAccount("zai", KEY)).rejects.toThrow("existing accounts were preserved");
+    await expect(saveBridgeAccount("zai", KEY)).rejects.toThrow(
+      `Fix or remove ${bridgeAccountsPath()}`,
+    );
+    await expect(saveBridgeAccount("zai", KEY)).rejects.not.toThrow(KEY);
     expect(readFileSync(bridgeAccountsPath(), "utf8")).toBe(malformed);
   });
   it("rejects insecure permissions, symlinks and hardlinks", async () => {
@@ -113,7 +116,7 @@ describe("private account storage", () => {
     const file = bridgeAccountsPath();
     symlinkSync(file + ".missing-target", file);
     expect(() => readBridgeAccounts()).toThrow("Cannot read bridge account configuration");
-    await expect(saveBridgeAccount("zai", KEY)).rejects.toThrow("existing accounts were preserved");
+    await expect(saveBridgeAccount("zai", KEY)).rejects.toThrow(`Fix or remove ${file}`);
     expect(() => readBridgeAccounts()).toThrow("Cannot read bridge account configuration");
   });
   it("sanitizes malformed Desktop configuration errors", async () => {
@@ -188,6 +191,17 @@ describe("standalone plan integration", () => {
   });
 });
 
+/** Simulate an installed table that lacks the zai individual plan. */
+function dropZaiRule(): void {
+  const table = path.join(root, "resources/config/provider/zcode-builtin.json");
+  const parsed = JSON.parse(readFileSync(table, "utf8"));
+  parsed.config.providerConfigRules.providerRules =
+    parsed.config.providerConfigRules.providerRules.filter(
+      (rule: { providerId: string }) => !rule.providerId.startsWith("account:zai-"),
+    );
+  writeFileSync(table, JSON.stringify(parsed));
+}
+
 const DESKTOP_KEY = "synthetic-desktop-key";
 function writeDesktopConfig(): void {
   writeFileSync(
@@ -237,13 +251,7 @@ describe("overlay failures keep Desktop credentials", () => {
     writeDesktopConfig();
     await saveBridgeAccount("zai", KEY);
     await saveBridgeAccount("bigmodel", "bridge-bigmodel-key");
-    const table = path.join(root, "resources/config/provider/zcode-builtin.json");
-    const parsed = JSON.parse(readFileSync(table, "utf8"));
-    parsed.config.providerConfigRules.providerRules =
-      parsed.config.providerConfigRules.providerRules.filter(
-        (rule: { providerId: string }) => !rule.providerId.startsWith("account:zai-"),
-      );
-    writeFileSync(table, JSON.stringify(parsed));
+    dropZaiRule();
     const providers = readCredentialConfig(ZCODE_CREDS_PATH).provider ?? {};
     expect(Object.keys(providers)).toEqual(["builtin:bigmodel-coding-plan"]);
     expect(providers["builtin:bigmodel-coding-plan"]?.options?.apiKey).toBe("bridge-bigmodel-key");
@@ -318,6 +326,45 @@ describe("hidden terminal input", () => {
     await expect(answer).rejects.not.toThrow(KEY);
     expect(state.raw).toBe(false);
     expect(input.listenerCount("keypress")).toBe(0);
+  });
+  it.each([["--provider", "zai"], ["--provider=zai"]])(
+    "saves the hidden key and reports success (%s)",
+    async (...args) => {
+      const { input, output, state } = terminal();
+      const done = runAccountSetup(args, input, Object.assign(output, { isTTY: true }) as never);
+      for (const char of KEY) input.emit("keypress", char, {});
+      input.emit("keypress", "\r", { name: "return" });
+      await done;
+      expect(readBridgeAccounts()).toEqual({ zai: { apiKey: KEY } });
+      expect(state.output).toContain("Bridge account saved");
+      expect(state.output).not.toContain(KEY);
+      expect(state.raw).toBe(false);
+    },
+  );
+  it("checks the installed catalog before asking for a key", async () => {
+    dropZaiRule();
+    const { input, output, state } = terminal();
+    await expect(
+      runAccountSetup(
+        ["--provider", "zai"],
+        input,
+        Object.assign(output, { isTTY: true }) as never,
+      ),
+    ).rejects.toThrow("no zai Coding Plan");
+    expect(state.output).not.toContain("API key");
+    expect(input.listenerCount("keypress")).toBe(0);
+  });
+  it("refuses a damaged account file before asking for a key and names the file", async () => {
+    writeFileSync(bridgeAccountsPath(), "", { mode: 0o600 });
+    const { input, output, state } = terminal();
+    await expect(
+      runAccountSetup(
+        ["--provider", "zai"],
+        input,
+        Object.assign(output, { isTTY: true }) as never,
+      ),
+    ).rejects.toThrow(`Fix or remove ${bridgeAccountsPath()}`);
+    expect(state.output).not.toContain("API key");
   });
   it("refuses secret command arguments and nonterminal setup", async () => {
     await expect(runAccountSetup(["--provider", "zai", "--api-key", KEY])).rejects.toThrow(
