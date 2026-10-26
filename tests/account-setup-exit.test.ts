@@ -1,26 +1,19 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import ts from "typescript";
 import { expect, it } from "vitest";
 
 it("releases initially nonflowing stdin so the setup reader child exits without EOF", async () => {
   const scratch = mkdtempSync(path.join(tmpdir(), "zacp-reader-child-"));
-  // Compile the production reader into a standalone child; no account/config
-  // setup is invoked. A pipe with a TTY-method stub reproduces fresh stdin's
+  // Runs the compiled reader (`pnpm build` first, as crash-guards.test.ts
+  // does). A pipe with a TTY-method stub reproduces fresh stdin's
   // readableFlowing=null state without depending on a platform PTY utility.
-  const source = readFileSync(new URL("../src/account-setup.ts", import.meta.url), "utf8")
-    .split("export async function runAccountSetup")[0]
-    .replace(/^import .*from "\.\/config\/bridge-accounts\.js";\n/gm, "");
-  const file = path.join(scratch, "reader.cjs");
+  const file = path.join(scratch, "reader.mjs");
   writeFileSync(
     file,
-    ts.transpileModule(source, {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-    }).outputText +
-      `
+    `import { readHiddenApiKey } from ${JSON.stringify(path.resolve("dist/account-setup.js"))};
 process.stdin.isTTY = true;
 process.stdin.isRaw = false;
 process.stdin.setRawMode = function(value) { this.isRaw = value; return this; };
