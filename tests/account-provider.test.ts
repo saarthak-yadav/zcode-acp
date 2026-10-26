@@ -18,7 +18,7 @@
  */
 
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -59,6 +59,7 @@ import {
   buildAccountProviderConfig,
   codingPlanRequestAuthFor,
   configProviderIdFor,
+  readBuiltinTable,
 } from "../src/config/account-provider.js";
 import { saveBridgeAccount } from "../src/config/bridge-accounts.js";
 
@@ -168,6 +169,23 @@ describe("provider id mapping", () => {
     expect(configProviderIdFor("3acc4047-9ddf-43bd-9ed3-a7745f5022ad")).toBe(
       "3acc4047-9ddf-43bd-9ed3-a7745f5022ad",
     );
+  });
+});
+
+describe("readBuiltinTable memo", () => {
+  it("re-parses a same-size rewrite or replacement that keeps the mtime", () => {
+    const at = 1_700_000_000;
+    const write = (file: string, revision: number) => {
+      writeFileSync(file, JSON.stringify({ ...TABLE, revision }));
+      utimesSync(file, at, at);
+    };
+    write(tablePath, 10);
+    expect(readBuiltinTable()?.table.revision).toBe(10);
+    write(tablePath, 11);
+    expect(readBuiltinTable()?.table.revision).toBe(11);
+    write(tablePath + ".new", 12);
+    renameSync(tablePath + ".new", tablePath);
+    expect(readBuiltinTable()?.table.revision).toBe(12);
   });
 });
 

@@ -5,7 +5,7 @@ import { mkdir, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { warn, zcodeHomeDir } from "../utils.js";
-import { builtinTablePath } from "./account-provider.js";
+import { readBuiltinTable } from "./account-provider.js";
 
 export type CodingPlanFamily = "zai" | "bigmodel";
 type Accounts = Partial<Record<CodingPlanFamily, { apiKey: string }>>;
@@ -123,34 +123,24 @@ export function codingPlanCatalog(family: CodingPlanFamily): {
   baseURL: string;
   name: string;
 } {
-  // Resolve at consumption time: these modules form an existing discovery
-  // cycle, so no filesystem/config reads happen during module initialization.
-  const file = builtinTablePath();
-  if (file) {
-    try {
-      const table = JSON.parse(readFileSync(file, "utf8"));
-      const rule = table.config?.providerConfigRules?.providerRules?.find(
-        (rule: { providerId?: string }) =>
-          rule.providerId === `account:${family}-individual-coding-plan`,
-      );
-      const models: unknown = rule?.config?.builtinModelIds;
-      if (
-        Array.isArray(models) &&
-        models.length &&
-        models.every((model) => typeof model === "string" && model.length)
-      )
-        return {
-          models,
-          name: family === "zai" ? "Z.ai Coding Plan" : "BigModel Coding Plan",
-          baseURL:
-            family === "zai"
-              ? "https://api.z.ai/api/anthropic"
-              : "https://open.bigmodel.cn/api/anthropic",
-        };
-    } catch {
-      /* Unsupported public catalog: report a safe setup error below. */
-    }
-  }
+  // account-provider.ts imports this module back, so read only at call time.
+  const rule = readBuiltinTable()?.table.config?.providerConfigRules?.providerRules?.find(
+    (rule) => rule.providerId === `account:${family}-individual-coding-plan`,
+  );
+  const models: unknown = rule?.config?.builtinModelIds;
+  if (
+    Array.isArray(models) &&
+    models.length &&
+    models.every((model) => typeof model === "string" && model.length)
+  )
+    return {
+      models,
+      name: family === "zai" ? "Z.ai Coding Plan" : "BigModel Coding Plan",
+      baseURL:
+        family === "zai"
+          ? "https://api.z.ai/api/anthropic"
+          : "https://open.bigmodel.cn/api/anthropic",
+    };
   throw new Error(
     `The installed ZCode provider table has no ${family} Coding Plan. Install a supported ZCode CLI or set ZCODE_BIN.`,
   );

@@ -25,7 +25,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -39,7 +39,7 @@ import { overlayAccounts, readCredentialConfig } from "./bridge-accounts.js";
 const PROVIDER_CONFIG_NAME = "zcode-builtin.json";
 
 /** One provider rule in the bundled table. */
-interface BuiltinProviderRule {
+export interface BuiltinProviderRule {
   providerId: string;
   providerName?: string;
   config?: {
@@ -49,7 +49,7 @@ interface BuiltinProviderRule {
   };
 }
 
-interface BuiltinTable {
+export interface BuiltinTable {
   revision?: number;
   config?: { providerConfigRules?: { providerRules?: BuiltinProviderRule[] } };
 }
@@ -67,7 +67,7 @@ interface BuiltinTable {
  * (verified 2026-09 — the push reported "received" but entitlement never
  * applied, switch stayed "Provider Registry 中不存在 Model").
  */
-export function builtinTablePath(): string | null {
+function builtinTablePath(): string | null {
   const injected = builtinProviderEnv()[BUILTIN_PROVIDER_ENV];
   if (injected) return injected;
   const fromEnv = process.env[BUILTIN_PROVIDER_ENV]?.trim();
@@ -87,11 +87,25 @@ export function builtinTablePath(): string | null {
   return existsSync(bundled) ? bundled : null;
 }
 
-function readBuiltinTable(): { table: BuiltinTable; file: string } | null {
+let tableCache: { key: string; table: BuiltinTable } | null = null;
+
+/**
+ * The parsed table, memoized by path, inode, size, mtime, and ctime. The
+ * runtime-headers path reads it several times before every model request, and
+ * the file is ~180 KB. Inode and ctime catch a same-size rewrite or rename
+ * that keeps the mtime, because utimes cannot set ctime.
+ */
+export function readBuiltinTable(): { table: BuiltinTable; file: string } | null {
   const file = builtinTablePath();
   if (!file) return null;
   try {
-    return { table: JSON.parse(readFileSync(file, "utf8")) as BuiltinTable, file };
+    const { ino, size, mtimeMs, ctimeMs } = statSync(file);
+    const key = `${file}\0${ino}:${size}:${mtimeMs}:${ctimeMs}`;
+    if (tableCache?.key !== key) {
+      const table = JSON.parse(readFileSync(file, "utf8")) as BuiltinTable;
+      tableCache = { key, table };
+    }
+    return { table: tableCache.table, file };
   } catch (e) {
     warn(
       `account-provider: unreadable provider table (${e instanceof Error ? e.message : String(e)})`,
