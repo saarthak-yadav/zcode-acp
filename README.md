@@ -273,7 +273,8 @@ login mechanism is added.
 
 If setup is killed while saving, it may leave an `acp-accounts.json.lock`
 directory. After confirming no setup process is running, remove that empty
-lock directory and retry. Setup refuses a malformed, linked, or broadly
+lock directory and retry. It may also leave an `acp-accounts.json.<id>.tmp`
+file. That file is owner-only but can hold the key, so delete it. Setup refuses a malformed, linked, or broadly
 readable account file and never overwrites it. The bridge ignores such a
 file with a warning and keeps using Desktop credentials. Fix or remove the
 file, then run setup again.

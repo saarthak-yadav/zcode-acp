@@ -174,6 +174,15 @@ describe("standalone plan integration", () => {
     expect(authorized).toBe(true);
     expect(existsSync(ZCODE_CREDS_PATH)).toBe(false);
   });
+  it("answers with the bridge key when the Desktop configuration is unreadable", async () => {
+    await saveBridgeAccount("zai", KEY);
+    writeFileSync(ZCODE_CREDS_PATH, `{"secret":"${KEY}",broken`);
+    expect(
+      buildAccountProviderConfig()?.providers["account:zai-individual-coding-plan"].access.entitled,
+    ).toBe(true);
+    expect(codingPlanRequestAuthFor("account:zai-individual-coding-plan")).toEqual({ apiKey: KEY });
+    expect(loadZcodeCredentials().ANTHROPIC_API_KEY).toBe(KEY);
+  });
   it("overlays only the explicitly configured family and preserves other Desktop entries", async () => {
     writeFileSync(
       ZCODE_CREDS_PATH,

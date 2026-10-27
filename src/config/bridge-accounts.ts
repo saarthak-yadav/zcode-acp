@@ -208,8 +208,10 @@ export function readCredentialConfig(legacyFile: string): CredentialConfig {
   } catch (error) {
     if (!Object.keys(overlays).length)
       throw new Error("Cannot read Desktop credential configuration");
+    // Saved accounts stand on their own, and the entitlement rung already
+    // counts them, so an unreadable Desktop file must not leave them unanswered.
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-      throw new Error("Cannot read Desktop credential configuration");
+      warnOnce("bridge-accounts: ignoring an unreadable Desktop credential configuration.");
     config = {};
   }
   const provider = { ...config.provider };
